@@ -1,0 +1,179 @@
+---
+title: "Practical Machine Learning Project "
+author: "Jose Gustavo Z. Rosa"
+date: "20 de fevereiro de 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## The Project 
+
+### Project Setup 
+I usualy like to setup everything at the project beggining of the script. 
+
+So, here we go, 
+
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(RColorBrewer)
+library(randomForest)
+
+# a quite obvious seed
+set.seed(12345)
+```
+
+
+## The Data Sources
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project comes from this original source: http://groupware.les.inf.puc-rio.br/har. 
+
+We will download the code directly from the URLS and cache them locally just to make things a little easier.
+
+### Getting the data 
+
+First of all, lets setup a local folder to download and fetch data late on, and also a couple of variables to hold the actual file reference
+
+```{r}
+if(!file.exists("./Data")){dir.create("./Data")}
+
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+#downloading the files
+localPath <- file.path("./Data")
+
+if(!file.exists("./Data")) {
+  download.file(trainUrl,destfile="./Data/train.csv",method="curl")  
+  download.file(testUrl,destfile="./Data/test.csv",method="curl")  
+}
+
+#loading the actual data
+trainFile <- read.csv(file.path(localPath, "train.csv" ),header = TRUE)
+testFile <- read.csv(file.path(localPath, "test.csv" ),header = TRUE)
+```
+
+### Cleaning Data
+
+At first we will clean only the trainning dataset, the idea is to leave only useful information for our purpose here and also and quite important as well is to remove columns with a "lot" of NA's or even other mismatch data os some sort. 
+
+There are also some columns that where brought as ˜factors˜ but they should be numeric, so the next code chunk deals with these values as well.
+
+```{r}
+trainFile[trainFile == '#DIV/0!'] <- NA
+trainFile[trainFile == ''] <- NA
+# extra removal here, since these columns do not look like as usefull
+trainFile <- trainFile[,-c(1:7)]
+
+for(i in 1:(ncol(trainFile)-1)){
+  if(class(trainFile[, i]) == 'factor'){    
+    trainFile[, i] <- as.numeric(as.character(trainFile[, i]))    
+  }
+}
+
+```
+
+After this basic cleaning procedure, it's important to check the "near zero variance" variables, since they might look usefull but actulally aren't. Since we are dealing with data from sensors it's quite a common scenario to handle this things. Also those same procedures must be applied to the provided test file (var name testFile in this project) in order to keep the analisys under the same base for further use in the predictors.
+
+```{r}
+nzv <- nearZeroVar(trainFile, saveMetrics = T)
+removed.cols <- names(trainFile)[nzv$nzv]
+trainFile <- trainFile[,!(nzv$nzv)]
+```
+
+### Partitioning the data
+
+  I approached the data partitioning in the same fashion as we saw on the lectures, using just two partitions (trainning and testing). I also used the preProcessing strategy to handle Missing values.
+
+```{r}
+inTrain <- createDataPartition(y=trainFile$classe, p=0.6, list=FALSE)
+myTraining <- trainFile[inTrain, ]
+myTesting <- trainFile[-inTrain, ]
+
+preObj <- preProcess(myTraining[,-ncol(myTraining)], method="medianImpute")
+myTraining <- predict(preObj, myTraining)
+
+dim(myTraining)
+dim(myTesting)
+
+```
+
+## And Now, for the Machine Learning
+
+### First a Decision Tree
+
+  First I'll try the simple decision tree to check how it will perform on the trainning set. I also decided use a simple plot of the thee just to ilustrate its general aspect.
+
+```{r}
+modFitA1 <- rpart(classe ~ ., data=myTraining, method="class")
+plot(modFitA1, main="Classification Tree")
+text(modFitA1, use.n=TRUE, all=TRUE, cex=.3)
+```
+### Predictions
+
+The following predictions are based on the inital Tree model. I chose to use a simple barchart to build a more concise view of the data.
+
+```{r}
+predictionsA1 <- predict(modFitA1, myTesting, type = "class")
+confusionMatrix(predictionsA1, myTesting$classe)
+```
+
+### And Them a Randon Forest
+
+
+  note: I had a better performance of the randon forest execution using the doParallel package, as showed bellow, but Im sure if the demonstrated configuration will be good enough to other plataforms
+
+```{r, cache=TRUE }
+library(doParallel)
+#adjust those paramenters to your computer... 
+registerDoParallel(cores=4)
+
+cvCtrl <- trainControl('cv', 2, savePred=T)
+modelb <- train(classe ~ ., data = myTraining, method = 'rf', trControl = cvCtrl)
+```
+So, Random forest went a quite better... Here is the chart
+
+```{r}
+plot(modelb,plotType = "line")
+
+```
+
+
+## Testing
+
+```{r}
+testing <- myTesting[,names(myTesting) %in% names(myTraining)]
+testingPred <- predict(preObj, testing, type="class")
+finalPred <- predict(modelb, newdata=testing, type = "raw")
+```
+
+## Saving the predictions for later.
+
+```{r}
+
+write.table(file = "predictions.csv", sep = ",", x = finalPred)
+
+```
+
+### Comparing the results
+
+```{r}
+
+qplot(predictionsA1)
+
+qplot(finalPred,main = "Predictions by Classe")
+
+```
+
