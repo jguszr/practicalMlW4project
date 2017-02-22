@@ -22,7 +22,7 @@ library(rpart)
 library(rpart.plot)
 library(RColorBrewer)
 library(randomForest)
-
+library(rattle)
 # a quite obvious seed
 set.seed(12345)
 ```
@@ -118,10 +118,11 @@ dim(myTesting)
 
 ```{r}
 modFitA1 <- rpart(classe ~ ., data=myTraining, method="class")
-plot(modFitA1, main="Classification Tree")
-text(modFitA1, use.n=TRUE, all=TRUE, cex=.3)
+fancyRpartPlot(modFitA1,main = "Classification Tree", sub = "Initial ML tree")
 ```
-### Predictions
+
+
+## Predictions
 
 The following predictions are based on the inital Tree model. I chose to use a simple barchart to build a more concise view of the data.
 
